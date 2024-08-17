@@ -101,21 +101,21 @@
                 body: JSON.stringify({ username, password }),
             });
 
+            const result = await response.json();
+
             if (!response.ok) {
-                throw new Error('Network response was not ok');
+                throw new Error(result.message || 'Network response was not ok');
             }
 
-            const result = await response.json();
-            // Handle response as needed
-            console.log('Registration successful:', result);
+            // Display success message from backend
+            alert(result.message || 'Registration successful!');
 
             // Optionally redirect or show a success message
-            alert('Registration successful!');
             // window.location.href = '/login'; // Redirect to login page
 
         } catch (error) {
             console.error('Error:', error);
-            alert('Registration failed. Please try again.');
+            alert(error.message || 'Registration failed. Please try again.');
         }
     }
 </script>

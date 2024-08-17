@@ -106,17 +106,14 @@
                 body: JSON.stringify({ username, password }),
             });
 
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
+            if (response.ok) {
+                // If login is successful, redirect to index.html
+                window.location.href = '/index.html';
+            } else {
+                // If login fails, handle error response
+                const result = await response.json();
+                alert(result.message || 'Login failed. Please try again.');
             }
-
-            const result = await response.json();
-            // Handle response as needed
-            console.log('Login successful:', result);
-
-            // Optionally redirect or show a success message
-            alert('Login successful!');
-            // window.location.href = '/home'; // Redirect to home page after login
 
         } catch (error) {
             console.error('Error:', error);
