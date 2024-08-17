@@ -8,9 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,11 +24,12 @@ public class UserController {
     public ResponseEntity<Map<String, String>> registerUser(@RequestBody User user) {
         try {
             userService.save(user);
-            log.info("用户注册成功: " + user);
+            log.info("用户注册成功: {}", user);
             Map<String, String> response = new HashMap<>();
             response.put("message", "用户注册成功");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            log.error("用户注册失败: ", e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("message", "用户名已存在");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
@@ -38,19 +37,17 @@ public class UserController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<Map<String, String>> loginUser(@RequestBody User user, HttpSession session, HttpServletResponse response) {
+    public ResponseEntity<Map<String, String>> loginUser(@RequestBody User user, HttpSession session) {
         Map<String, String> responseMap = new HashMap<>();
         try {
             boolean authenticatedUser = userService.authenticate(user.getUsername(), user.getPassword());
 
             if (authenticatedUser) {
-                // 将用户信息存储到 session
-                session.setAttribute("user", user);
+                Long userId = userService.getUserIdByUsername(user.getUsername());
+                session.setAttribute("userId", userId); // 存储用户 ID 到 session
 
                 responseMap.put("message", "登录成功");
-                // 重定向到 index.html
-                response.sendRedirect("/index.html");
-                return null; // 因为重定向后不再需要返回JSON
+                return ResponseEntity.ok(responseMap);
             } else {
                 responseMap.put("message", "用户名或密码错误");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(responseMap);
@@ -60,5 +57,13 @@ public class UserController {
             responseMap.put("message", "登录失败");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(responseMap);
         }
+    }
+
+    @GetMapping("/logout")
+    public ResponseEntity<Map<String, String>> logoutUser(HttpSession session) {
+        session.invalidate(); // 使用户会话无效
+        Map<String, String> responseMap = new HashMap<>();
+        responseMap.put("message", "用户已登出");
+        return ResponseEntity.ok(responseMap);
     }
 }

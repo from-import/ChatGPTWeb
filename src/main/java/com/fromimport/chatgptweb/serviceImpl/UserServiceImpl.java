@@ -1,5 +1,6 @@
 package com.fromimport.chatgptweb.serviceImpl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fromimport.chatgptweb.entity.User;
 import com.fromimport.chatgptweb.mapper.UserMapper;
@@ -40,5 +41,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             log.info("用户验证成功");}
 
         return correct; // 验证密码
+    }
+
+    @Override
+    public Long getUserIdByUsername(String username) {
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getUsername, username); // 根据用户名查询
+
+        User user = userMapper.selectOne(queryWrapper); // 使用 Mapper 查询单个用户
+        if (user != null) {
+            return user.getId();
+        }
+        return null; // 或者抛出异常，视情况而定
     }
 }

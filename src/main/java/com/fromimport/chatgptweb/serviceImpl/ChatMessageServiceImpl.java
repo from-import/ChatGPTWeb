@@ -5,6 +5,7 @@ import com.fromimport.chatgptweb.entity.ChatMessage;
 import com.fromimport.chatgptweb.mapper.ChatMessageMapper;
 import com.fromimport.chatgptweb.service.ChatMessageService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,9 @@ import java.time.LocalDateTime;
 @Transactional
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage> implements ChatMessageService {
 
+    @Autowired
+    private ChatMessageMapper chatMessageMapper;
+
     @Override
     public void saveChatMessage(Long userId, String content, String sender) {
         ChatMessage chatMessage = new ChatMessage();
@@ -22,8 +26,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         chatMessage.setContent(content);
         chatMessage.setSender(sender);
         chatMessage.setTimestamp(LocalDateTime.now());
+        log.info("准备记录数据： " + chatMessage);
 
-        save(chatMessage);
-        log.info("Chat message saved: " + chatMessage);
+        chatMessageMapper.insert(chatMessage); // 使用 mapper 保存数据
     }
 }
