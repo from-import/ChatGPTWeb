@@ -18,6 +18,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Autowired
     private UserMapper userMapper;
 
+    @Override
+    public User getUserByUsername(String username) {
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getUsername, username); // 根据用户名查询
+
+        return userMapper.selectOne(queryWrapper); // 使用 Mapper 查询单个用户
+    }
+
+
 
     @Override
     public void registerUser(String username, String password) {

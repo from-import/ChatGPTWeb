@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ChatGPT Interface</title>
     <style>
+        /* Your existing styles remain unchanged */
         body {
             font-family: Arial, sans-serif;
             background-color: #f4f4f9;
@@ -103,9 +104,40 @@
 <div class="input-box">
     <input type="text" id="message-input" placeholder="Type your message...">
     <button onclick="sendMessage()">Send</button>
+    <button onclick="endConversation()">End Conversation</button> <!-- End Conversation Button -->
 </div>
 
 <script>
+    // Function to load conversation history
+    async function loadConversationHistory(userId) {
+        try {
+            const response = await fetch(`/api/conversations/history?userId=${userId}`);
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+
+            const conversationHistory = await response.json();
+            const messageQueue = document.getElementById('message-queue');
+
+            // Populate the message queue with conversation history
+            conversationHistory.forEach(conversation => {
+                const conversationElement = document.createElement('div');
+                conversationElement.className = 'conversation';
+                conversationElement.innerHTML = `
+                    <div><strong>Conversation ID:</strong> ${conversation.conversationId}</div>
+                    <div><strong>First Message:</strong> ${conversation.firstMessage}</div>
+                    <div><strong>Started At:</strong> ${new Date(conversation.startTimestamp).toLocaleString()}</div>
+                `;
+                messageQueue.appendChild(conversationElement);
+            });
+        } catch (error) {
+            console.error('Error loading conversation history:', error);
+        }
+    }
+
+    // Call the loadConversationHistory function with a hardcoded userId (replace with the actual userId as needed)
+    loadConversationHistory(1); // Replace with dynamic userId
+
     async function sendMessage() {
         const input = document.getElementById('message-input');
         const messageText = input.value.trim();
@@ -135,24 +167,40 @@
                 throw new Error('Network response was not ok');
             }
 
-            // Print the raw response for debugging
             const responseBody = await response.text();
             console.log('Raw response:', responseBody);
 
-            // If response is plain text, handle it directly
             const data = { response: responseBody };
 
-            // Append bot's message
             const botMessage = document.createElement('div');
             botMessage.className = 'message bot';
             botMessage.innerHTML = `<span>${data.response}</span>`;
             chatBox.appendChild(botMessage);
 
-            // Scroll to the bottom
             chatBox.scrollTop = chatBox.scrollHeight;
 
         } catch (error) {
             console.error('Error:', error);
+        }
+    }
+
+    async function endConversation() {
+        try {
+            const response = await fetch('/api/endConversation', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+
+            const result = await response.text();
+            alert(result);
+        } catch (error) {
+            console.error('Error ending conversation:', error);
         }
     }
 </script>

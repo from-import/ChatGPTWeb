@@ -20,14 +20,13 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private ChatMessageMapper chatMessageMapper;
 
     @Override
-    public void saveChatMessage(Long userId, String content, String sender) {
+    public void saveChatMessage(Long userId, Long conversationId, String message, String sender) {
         ChatMessage chatMessage = new ChatMessage();
         chatMessage.setUserId(userId);
-        chatMessage.setContent(content);
+        chatMessage.setConversationId(conversationId);
+        chatMessage.setContent(message);
         chatMessage.setSender(sender);
         chatMessage.setTimestamp(LocalDateTime.now());
-        log.info("准备记录数据： " + chatMessage);
-
-        chatMessageMapper.insert(chatMessage); // 使用 mapper 保存数据
+        chatMessageMapper.insert(chatMessage);
     }
 }

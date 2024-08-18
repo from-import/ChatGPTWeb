@@ -43,8 +43,8 @@ public class UserController {
             boolean authenticatedUser = userService.authenticate(user.getUsername(), user.getPassword());
 
             if (authenticatedUser) {
-                Long userId = userService.getUserIdByUsername(user.getUsername());
-                session.setAttribute("userId", userId); // 存储用户 ID 到 session
+                User loggedInUser = userService.getUserByUsername(user.getUsername());
+                session.setAttribute("user", loggedInUser); // 存储完整用户信息到 session
 
                 responseMap.put("message", "登录成功");
                 return ResponseEntity.ok(responseMap);
