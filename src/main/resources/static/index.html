@@ -157,19 +157,19 @@
             const conversationHistory = await response.json();
             const messageQueue = document.getElementById('message-queue');
 
-            // Clear previous messages
+            // 清除之前的消息
             messageQueue.innerHTML = '';
 
-            // Populate the message queue with conversation history
+            // 填充消息队列
             conversationHistory.forEach(conversation => {
                 const conversationButton = document.createElement('button');
                 conversationButton.className = 'conversation-button';
-                conversationButton.dataset.conversationId = conversation.conversationId; // Store conversationId in data attribute
+                conversationButton.dataset.conversationId = conversation.conversationId.toString(); // 确保 ID 是字符串
                 conversationButton.innerHTML = `
                     <div class="first-message">${conversation.firstMessage}</div>
                     <div class="started-at">Started At: ${new Date(conversation.startTimestamp).toLocaleString()}</div>
                 `;
-                conversationButton.onclick = () => loadConversationDetail(conversation.conversationId);
+                conversationButton.onclick = () => loadConversationDetail(conversationButton.dataset.conversationId);
                 messageQueue.appendChild(conversationButton);
             });
         } catch (error) {
@@ -185,18 +185,24 @@
             }
 
             const conversationDetail = await response.json();
+            console.log('Conversation Detail:', conversationDetail); // 调试信息
+
             const chatBox = document.getElementById('chat-box');
 
-            // Clear previous chat messages
+            // 清除之前的聊天记录
             chatBox.innerHTML = '';
 
-            // Populate chatBox with conversation detail
-            conversationDetail.messages.forEach(message => {
-                const messageElement = document.createElement('div');
-                messageElement.className = `message ${message.sender}`;
-                messageElement.innerHTML = `<span>${message.text}</span>`;
-                chatBox.appendChild(messageElement);
-            });
+            // 填充聊天记录
+            if (Array.isArray(conversationDetail)) {
+                conversationDetail.forEach(message => {
+                    const messageElement = document.createElement('div');
+                    messageElement.className = `message ${message.sender.toLowerCase()}`; // 使用小写的 sender
+                    messageElement.innerHTML = `<span>${message.text}</span>`;
+                    chatBox.appendChild(messageElement);
+                });
+            } else {
+                console.error('Conversation detail is not an array:', conversationDetail);
+            }
 
             chatBox.scrollTop = chatBox.scrollHeight;
         } catch (error) {
@@ -210,17 +216,17 @@
         const messageText = input.value.trim();
         if (messageText === '' || !userId) return;
 
-        // Append user's message
+        // 添加用户消息
         const chatBox = document.getElementById('chat-box');
         const userMessage = document.createElement('div');
         userMessage.className = 'message user';
         userMessage.innerHTML = `<span>${messageText}</span>`;
         chatBox.appendChild(userMessage);
 
-        // Clear input
+        // 清空输入框
         input.value = '';
 
-        // Send request to backend
+        // 发送请求到后端
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',

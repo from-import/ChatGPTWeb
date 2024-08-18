@@ -11,5 +11,5 @@ import java.util.Map;
 public interface ConversationService extends IService<Conversation> {
     Conversation getOngoingConversation(Long userId);
     List<Map<String, Object>> getConversationHistoryWithFirstMessage(Long userId);
-    List<Map<String, Object>> getConversationHistoryWithConversationId(Long conversationId);
+    List<Map<String, Object>> getConversationHistoryWithConversationId(String conversationId);
 }

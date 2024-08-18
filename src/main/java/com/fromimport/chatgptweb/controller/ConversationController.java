@@ -22,7 +22,7 @@ public class ConversationController {
     // 根据 conversationId 获取详细对话记录的实现
     // 返回详细对话记录的响应
     @GetMapping("/{conversationId}")
-    public List<Map<String, Object>> getConversationDetail(@PathVariable Long conversationId) {
+    public List<Map<String, Object>> getConversationDetail(@PathVariable String conversationId) {
         return conversationService.getConversationHistoryWithConversationId(conversationId);
     }
 

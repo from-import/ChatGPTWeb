@@ -63,14 +63,14 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                             .eq(ChatMessage::getConversationId, conversation.getId())
                             .eq(ChatMessage::getSender, "user")
                             .orderByAsc(ChatMessage::getTimestamp)
-                            .last("LIMIT 1"));
+                            .last("LIMIT 1")); // 使用 LIMIT 确保只获取一条记录
 
                     log.info("对话ID {} 的第一条用户消息: {}", conversation.getId(),
                             firstMessage != null ? firstMessage.getContent() : "未找到消息");
 
                     // 创建一个 HashMap 以确保类型匹配
                     Map<String, Object> resultMap = new HashMap<>();
-                    resultMap.put("conversationId", conversation.getId());
+                    resultMap.put("conversationId", conversation.getId().toString()); // 确保 ID 是字符串
                     resultMap.put("startTimestamp", conversation.getStartTimestamp());
                     resultMap.put("firstMessage", firstMessage != null ? firstMessage.getContent() : "");
 
@@ -86,7 +86,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     }
 
     @Override
-    public List<Map<String, Object>> getConversationHistoryWithConversationId(Long conversationId) {
+    public List<Map<String, Object>> getConversationHistoryWithConversationId(String conversationId) {
         log.info("开始获取对话ID为 {} 的详细记录", conversationId);
 
         // 获取该对话的所有消息
