@@ -8,6 +8,7 @@ import com.fromimport.chatgptweb.service.ConversationService;
 import com.fromimport.chatgptweb.service.OpenAIService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -16,6 +17,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -32,6 +35,14 @@ public class ChatController {
 
     @Autowired
     private ConversationService conversationService;
+
+    @GetMapping("/session/userId")
+    public ResponseEntity<Map<String, Long>> getUserId(HttpServletRequest request) {
+        User user = (User) request.getSession().getAttribute("user");
+        Map<String, Long> response = new HashMap<>();
+        response.put("userId", user != null ? user.getId() : null);
+        return ResponseEntity.ok(response);
+    }
 
     @PostMapping("/chat")
     public Mono<String> chat(@RequestBody ChatRequest chatRequest, ServletRequest request) {

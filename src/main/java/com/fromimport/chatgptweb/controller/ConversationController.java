@@ -2,10 +2,7 @@ package com.fromimport.chatgptweb.controller;
 
 import com.fromimport.chatgptweb.service.ConversationService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
@@ -21,4 +18,13 @@ public class ConversationController {
     public List<Map<String, Object>> getConversationHistory(@RequestParam Long userId) {
         return conversationService.getConversationHistoryWithFirstMessage(userId);
     }
+
+    // 根据 conversationId 获取详细对话记录的实现
+    // 返回详细对话记录的响应
+    @GetMapping("/{conversationId}")
+    public List<Map<String, Object>> getConversationDetail(@PathVariable Long conversationId) {
+        return conversationService.getConversationHistoryWithConversationId(conversationId);
+    }
+
+
 }
