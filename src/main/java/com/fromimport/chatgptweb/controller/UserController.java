@@ -1,5 +1,6 @@
 package com.fromimport.chatgptweb.controller;
 
+import com.fromimport.chatgptweb.annotation.LoadConversationsToRedis;
 import com.fromimport.chatgptweb.entity.User;
 import com.fromimport.chatgptweb.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,7 @@ public class UserController {
     }
 
     @PostMapping("/login")
+    @LoadConversationsToRedis
     public ResponseEntity<Map<String, String>> loginUser(@RequestBody User user, HttpSession session) {
         Map<String, String> responseMap = new HashMap<>();
         try {
@@ -47,6 +49,7 @@ public class UserController {
                 session.setAttribute("user", loggedInUser); // 存储完整用户信息到 session
 
                 responseMap.put("message", "登录成功");
+                responseMap.put("userId", loggedInUser.getId().toString()); // 添加 userId 到响应中
                 return ResponseEntity.ok(responseMap);
             } else {
                 responseMap.put("message", "用户名或密码错误");
