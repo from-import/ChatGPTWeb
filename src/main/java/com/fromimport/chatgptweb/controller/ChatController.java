@@ -1,5 +1,8 @@
 package com.fromimport.chatgptweb.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fromimport.chatgptweb.config.RabbitMQConfig;
 import com.fromimport.chatgptweb.entity.Conversation;
 import com.fromimport.chatgptweb.entity.User;
 import com.fromimport.chatgptweb.model.ChatRequest;
@@ -7,16 +10,17 @@ import com.fromimport.chatgptweb.service.ChatMessageService;
 import com.fromimport.chatgptweb.service.ConversationService;
 import com.fromimport.chatgptweb.service.OpenAIService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import javax.servlet.ServletRequest;
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -25,16 +29,16 @@ import java.util.Map;
 @Slf4j
 public class ChatController {
 
-    private final OpenAIService openAIService;
-    private final ChatMessageService chatMessageService;
-
-    public ChatController(OpenAIService openAIService, ChatMessageService chatMessageService) {
-        this.openAIService = openAIService;
-        this.chatMessageService = chatMessageService;
-    }
-
+    @Autowired
+    private OpenAIService openAIService;
+    @Autowired
+    private ChatMessageService chatMessageService;
     @Autowired
     private ConversationService conversationService;
+    @Autowired
+    private RabbitTemplate rabbitTemplate; // 注入 RabbitTemplate
+    @Autowired
+    private StringRedisTemplate redisTemplate; // 注入 RedisTemplate
 
     @GetMapping("/session/userId")
     public ResponseEntity<Map<String, Long>> getUserId(HttpServletRequest request) {
@@ -45,16 +49,12 @@ public class ChatController {
     }
 
     @PostMapping("/chat")
-    public Mono<String> chat(@RequestBody ChatRequest chatRequest, ServletRequest request) {
+    public Mono<Map<String, Object>> chat(@RequestBody ChatRequest chatRequest, ServletRequest request) throws JsonProcessingException {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
-        String requestURI = httpRequest.getRequestURI();
         User user = (User) httpRequest.getSession().getAttribute("user");
-        log.info("收到请求：URI={}, 用户登录状态={}", requestURI, user != null ? "已登录" : "未登录");
-        Long userId = user != null ? user.getId() : null; // 获取 userId
-        log.info("获取当前用户信息为： {}", userId);
+        Long userId = user != null ? user.getId() : null;
 
         String message = chatRequest.getMessage();
-        log.info("从前端获取到了用户发送的内容： {}", message);
         if (userId == null) {
             return Mono.error(new RuntimeException("用户未登录或会话过期"));
         }
@@ -65,24 +65,48 @@ public class ChatController {
         // 保存用户的消息
         chatMessageService.saveChatMessage(userId, conversation.getId(), message, "user");
 
-        // 处理请求并获取响应
-        return openAIService.chatgpt(message)
-                .flatMap(response -> {
-                    // 保存 ChatGPT 的回复
-                    chatMessageService.saveChatMessage(userId, conversation.getId(), response, "chatgpt");
-                    log.info("已保存ChatGPT返回的内容: {}", response);
+        // 构造消息
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", userId.toString());
+        payload.put("conversationId", conversation.getId().toString());
+        payload.put("message", message);
 
-                    // 返回响应
-                    return Mono.just(response);
-                });
+        // 将消息发布到 RabbitMQ 队列
+        String jsonPayload = new ObjectMapper().writeValueAsString(payload);
+        rabbitTemplate.convertAndSend(RabbitMQConfig.CHAT_EXCHANGE, "chat.payload", jsonPayload);
+
+        // 返回一个用于查询的ID或其他信息
+        Map<String, Object> response = new HashMap<>();
+        response.put("conversationId", conversation.getId().toString()); // 确保 conversationId 为字符串
+        response.put("message", "消息已发送，正在处理中");
+        return Mono.just(response);
+    }
+
+    @GetMapping("/chat/{conversationId}")
+    public Mono<Map<String, Object>> getChatResponse(@PathVariable String conversationId) {
+        Long conversationIdLong = Long.parseLong(conversationId);
+
+        // 从 Redis 中获取聊天记录
+        String response = (String) redisTemplate.opsForValue().get("chat_response_" + conversationIdLong);
+
+        Map<String, Object> result = new HashMap<>();
+        if (response == null) {
+            result.put("status", "pending");
+        } else {
+            result.put("status", "completed");
+            result.put("response", response);
+            // 清除 Redis 缓存
+            redisTemplate.delete("chat_response_" + conversationIdLong);
+            log.info("已清除 Redis 缓存: chat_response_{}", conversationIdLong);
+        }
+        return Mono.just(result);
     }
 
     @PostMapping("/endConversation")
     public Mono<String> endConversation(ServletRequest request) {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
-        String requestURI = httpRequest.getRequestURI();
         User user = (User) httpRequest.getSession().getAttribute("user");
-        Long userId = user != null ? user.getId() : null; // 获取 userId
+        Long userId = user != null ? user.getId() : null;
         if (userId == null) {
             return Mono.error(new RuntimeException("用户未登录或会话过期"));
         }
@@ -101,7 +125,6 @@ public class ChatController {
 
     private Conversation getOrCreateConversation(Long userId) {
         // 查询数据库中是否有一个尚未结束的对话
-        // 此处假设我们使用了 ConversationService 来处理对话逻辑
         Conversation conversation = conversationService.getOngoingConversation(userId);
         if (conversation == null) {
             // 如果没有找到尚未结束的对话，创建一个新的对话
@@ -112,9 +135,4 @@ public class ChatController {
         }
         return conversation;
     }
-
-
-
-
-
 }

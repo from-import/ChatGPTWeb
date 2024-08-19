@@ -240,21 +240,40 @@
                 throw new Error('Network response was not ok');
             }
 
-            const responseBody = await response.text();
-            console.log('Raw response:', responseBody);
+            const { conversationId } = await response.json();
+            console.log('Conversation ID:', conversationId);
 
-            const data = { response: responseBody };
-
-            const botMessage = document.createElement('div');
-            botMessage.className = 'message bot';
-            botMessage.innerHTML = `<span>${data.response}</span>`;
-            chatBox.appendChild(botMessage);
-
-            chatBox.scrollTop = chatBox.scrollHeight;
+            // 开始轮询获取消息结果
+            pollForResponse(conversationId.toString());
 
         } catch (error) {
             console.error('Error:', error);
         }
+    }
+
+    async function pollForResponse(conversationId) {
+        const chatBox = document.getElementById('chat-box');
+
+        const intervalId = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/chat/${conversationId}`);
+                const data = await response.json();
+
+                if (data.status === 'completed') {
+                    const botMessage = document.createElement('div');
+                    botMessage.className = 'message bot';
+                    botMessage.innerHTML = `<span>${data.response}</span>`;
+                    chatBox.appendChild(botMessage);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                    clearInterval(intervalId);
+                } else {
+                    console.log('Waiting for response...');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                clearInterval(intervalId);
+            }
+        }, 2000); // 每2秒轮询一次
     }
 
     async function endConversation() {
