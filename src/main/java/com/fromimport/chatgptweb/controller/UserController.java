@@ -4,6 +4,7 @@ import com.fromimport.chatgptweb.annotation.LoadConversationsToRedis;
 import com.fromimport.chatgptweb.entity.User;
 import com.fromimport.chatgptweb.service.UserService;
 import lombok.extern.slf4j.Slf4j;
+import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +25,8 @@ public class UserController {
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> registerUser(@RequestBody User user) {
         try {
+            user.setPassword(hashPassword(user.getPassword()));
+            log.info("用户密码加密成功: {}", user);
             userService.save(user);
             log.info("用户注册成功: {}", user);
             Map<String, String> response = new HashMap<>();
@@ -37,17 +40,22 @@ public class UserController {
         }
     }
 
+    private String hashPassword(String password) {
+        return BCrypt.hashpw(password, BCrypt.gensalt());
+    }
+
     @PostMapping("/login")
     @LoadConversationsToRedis
     public ResponseEntity<Map<String, String>> loginUser(@RequestBody User user, HttpSession session) {
         Map<String, String> responseMap = new HashMap<>();
         try {
+            log.info("用户正在尝试登录：username={}", user.getUsername());
+            // 直接在此处对密码进行验证
             boolean authenticatedUser = userService.authenticate(user.getUsername(), user.getPassword());
 
             if (authenticatedUser) {
                 User loggedInUser = userService.getUserByUsername(user.getUsername());
                 session.setAttribute("user", loggedInUser); // 存储完整用户信息到 session
-
                 responseMap.put("message", "登录成功");
                 responseMap.put("userId", loggedInUser.getId().toString()); // 添加 userId 到响应中
                 log.info("用户登录成功: {}", loggedInUser);

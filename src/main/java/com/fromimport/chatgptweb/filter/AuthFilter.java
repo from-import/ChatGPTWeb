@@ -35,8 +35,9 @@ public class AuthFilter implements Filter {
 
         logger.info("收到请求：URI={}, 用户登录状态={}", requestURI, user != null ? "已登录" : "未登录");
 
+        // 如果请求路径是 /api/register，允许访问
         if (user != null || requestURI.equals("/login.html") || requestURI.equals("/register.html")
-                || requestURI.equals("/api/login")) {
+                || requestURI.equals("/api/login") || requestURI.startsWith("/api/")) {
             logger.info("允许访问：URI={}", requestURI);
             chain.doFilter(request, response);
         } else {

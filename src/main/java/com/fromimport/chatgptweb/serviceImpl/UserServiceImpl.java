@@ -6,6 +6,7 @@ import com.fromimport.chatgptweb.entity.User;
 import com.fromimport.chatgptweb.mapper.UserMapper;
 import com.fromimport.chatgptweb.service.UserService;
 import lombok.extern.slf4j.Slf4j;
+import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,41 +23,38 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     public User getUserByUsername(String username) {
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(User::getUsername, username); // 根据用户名查询
-
         return userMapper.selectOne(queryWrapper); // 使用 Mapper 查询单个用户
     }
-
-
 
     @Override
     public void registerUser(String username, String password) {
         User user = new User();
         user.setUsername(username);
-        user.setPassword(password); // 加密密码
+        user.setPassword(hashPassword(password)); // 加密密码
         log.info("正在向数据库增加用户：" + user);
         userMapper.insert(user); // 插入用户到数据库
+    }
+
+    private String hashPassword(String password) {
+        return BCrypt.hashpw(password, BCrypt.gensalt());
     }
 
     @Override
     public boolean authenticate(String username, String password) {
         User user = lambdaQuery().eq(User::getUsername, username).one();; // 根据用户名查询用户
-        log.info("正在验证用户：" + user);
-        if (user == null) {
-            log.info("用户不存在");
-            return false;
+        // 如果用户存在，检查密码是否匹配
+        if (user != null) {
+            // 使用 BCrypt 来验证密码
+            return BCrypt.checkpw(password, user.getPassword());
         }
-        boolean correct = password.equals(user.getPassword()); // 验证密码
-        if(correct){
-            log.info("用户验证成功");}
-
-        return correct; // 验证密码
+        // 用户不存在或密码不匹配
+        return false;
     }
 
     @Override
     public Long getUserIdByUsername(String username) {
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(User::getUsername, username); // 根据用户名查询
-
         User user = userMapper.selectOne(queryWrapper); // 使用 Mapper 查询单个用户
         if (user != null) {
             return user.getId();
