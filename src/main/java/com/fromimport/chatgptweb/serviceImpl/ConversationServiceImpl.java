@@ -51,6 +51,10 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
 
     @Override
     public List<Map<String, Object>> getConversationHistoryWithFirstMessage(Long userId) {
+        // Redis优化后执行耗时：6ms
+        // 原始的MYSQL查询耗时：14ms
+        // 2024-08-20 18:07:36.038  INFO 32160 --- [nio-8080-exec-6] c.f.c.aspect.ExecutionTimeAspect         : List com.fromimport.chatgptweb.serviceImpl.ConversationServiceImpl.getConversationHistoryWithFirstMessage(Long) 执行时间: 14 ms
+        // 2024-08-20 18:08:28.190  INFO 29168 --- [nio-8080-exec-6] c.f.c.aspect.ExecutionTimeAspect         : List com.fromimport.chatgptweb.serviceImpl.ConversationServiceImpl.getConversationHistoryWithFirstMessage(Long) 执行时间: 6 ms
         log.info("开始获取用户ID为 {} 的对话历史", userId);
 
         // 先从 Redis 中读取缓存数据

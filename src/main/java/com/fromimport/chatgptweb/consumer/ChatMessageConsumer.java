@@ -34,7 +34,7 @@ public class ChatMessageConsumer {
     @RabbitListener(queues = "chatQueue")
     public void receiveMessage(String payload) {
         log.info("收到 RabbitMQ 消息: {}", payload);
-
+        long startTime = System.currentTimeMillis();
         // 提交消息处理任务到线程池
         Future<?> future = taskExecutor.submit(() -> {
             try {
@@ -54,6 +54,8 @@ public class ChatMessageConsumer {
                             // 保存 ChatGPT 响应
                             chatMessageService.saveChatMessage(Long.parseLong(userId), Long.parseLong(conversationId), response, "chatgpt");
                             log.info("从 ChatGPT 获取的响应: {}", response);
+                            long endTime = System.currentTimeMillis();
+                            log.info("有线程池调度的运行时间: {} ms", (endTime - startTime));
 
                             // 将响应存储到 Redis
                             redisTemplate.opsForValue().set("chat_response_" + conversationId, response);
@@ -80,4 +82,38 @@ public class ChatMessageConsumer {
             log.error("等待线程池任务完成失败: {}", e.getMessage(), e);
         }
     }
+
+//    @RabbitListener(queues = "chatQueue")
+//    public void receiveMessageWithoutThreadPool(String payload) {
+//        log.info("收到 RabbitMQ 消息: {}", payload);
+//        long startTime = System.currentTimeMillis();
+//
+//        try {
+//            // 从 payload 中提取数据并进行类型转换
+//            Map<String, Object> data = new ObjectMapper().readValue(payload, Map.class);
+//            String userId = (String) data.get("userId");
+//            String conversationId = (String) data.get("conversationId");
+//            String message = (String) data.get("message");
+//
+//            log.info("提取的用户 ID: {}", userId);
+//            log.info("提取的对话 ID: {}", conversationId);
+//            log.info("提取的消息内容: {}", message);
+//
+//            // 调用 OpenAI 服务获取响应
+//            openAIService.chatgpt(message)
+//                    .subscribe(response -> {
+//                        // 保存 ChatGPT 响应
+//                        chatMessageService.saveChatMessage(Long.parseLong(userId), Long.parseLong(conversationId), response, "chatgpt");
+//                        log.info("从 ChatGPT 获取的响应: {}", response);
+//                        long endTime = System.currentTimeMillis();
+//                        log.info("没有线程池调度的运行时间: {} ms", (endTime - startTime));
+//
+//                        // 将响应存储到 Redis
+//                        redisTemplate.opsForValue().set("chat_response_" + conversationId, response);
+//                        log.info("将响应存储到 Redis: {}", response);
+//                    });
+//        } catch (Exception e) {
+//            log.error("处理消息失败: {}", e.getMessage(), e);
+//        }
+//    }
 }
