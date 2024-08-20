@@ -39,9 +39,9 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     @Override
     public Conversation getOngoingConversation(Long userId) {
         return lambdaQuery()
-                .eq(Conversation::getUserId, userId)
-                .isNull(Conversation::getEndTimestamp)
-                .one();
+                .eq(Conversation::getUserId, userId) // WHERE user_id = #{userId}
+                .isNull(Conversation::getEndTimestamp) // AND end_timestamp IS NULL
+                .one(); // LIMIT 1
     }
 
     @Override
@@ -53,6 +53,22 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     public List<Map<String, Object>> getConversationHistoryWithFirstMessage(Long userId) {
         log.info("开始获取用户ID为 {} 的对话历史", userId);
 
+        // 先从 Redis 中读取缓存数据
+        String conversationsJson = redisTemplate.opsForValue().get("user:conversations:" + userId);
+
+        if (conversationsJson != null && !conversationsJson.trim().isEmpty()) {
+            try {
+                // 从缓存中读取数据并转换为 List<Map<String, Object>>
+                List<Map<String, Object>> cachedConversations = objectMapper.readValue(conversationsJson, List.class);
+                log.info("从 Redis 中获取到对话历史数据: {}", cachedConversations);
+                return cachedConversations;
+            } catch (JsonProcessingException e) {
+                log.error("从 Redis 中读取对话历史数据时出错: ", e);
+            }
+        }
+
+        // 如果缓存中没有数据，从 MySQL 中读取
+        log.info("Redis 中没有找到用户ID为 {} 的对话历史数据，从 MySQL 中加载", userId);
         List<Conversation> conversations = this.list(new LambdaQueryWrapper<Conversation>()
                 .eq(Conversation::getUserId, userId)
                 .orderByAsc(Conversation::getStartTimestamp));
@@ -63,11 +79,11 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 .map(conversation -> {
                     log.info("正在处理对话ID: {}", conversation.getId());
 
-                    ChatMessage firstMessage = chatMessageService.getOne(new LambdaQueryWrapper<ChatMessage>()
-                            .eq(ChatMessage::getConversationId, conversation.getId())
-                            .eq(ChatMessage::getSender, "user")
-                            .orderByAsc(ChatMessage::getTimestamp)
-                            .last("LIMIT 1"));
+                    ChatMessage firstMessage = chatMessageService.getOne(new LambdaQueryWrapper<ChatMessage>() // getOne 由 IService 接口提供，用于从数据库中获取一条符合条件的记录。如果有多条记录满足条件，则返回第一条。
+                            .eq(ChatMessage::getConversationId, conversation.getId()) // 筛选出 conversationId 等于 conversation.getId() 的 ChatMessage 记录。
+                            .eq(ChatMessage::getSender, "user") // 这个条件进一步筛选出 sender 字段等于 "user" 的记录。
+                            .orderByAsc(ChatMessage::getTimestamp) // 这个条件指定了对结果按照 timestamp 字段进行升序排序。
+                            .last("LIMIT 1")); // 限制查询结果最多返回一条记录，即使有多个记录满足条件，也只会返回第一条。
 
                     log.info("对话ID {} 的第一条用户消息: {}", conversation.getId(),
                             firstMessage != null ? firstMessage.getContent() : "未找到消息");
@@ -82,6 +98,59 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 .collect(Collectors.toList());
 
         log.info("对话历史数据: {}", conversationHistory);
+
+        // 将数据存储到 Redis 中
+        try {
+            String conversationsJsonNew = objectMapper.writeValueAsString(conversationHistory);
+            redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJsonNew);
+            log.info("用户ID {} 的对话历史已加载到 Redis", userId);
+        } catch (JsonProcessingException e) {
+            log.error("将对话历史转换为 JSON 时出错: ", e);
+        }
+
+        return conversationHistory;
+    }
+
+    @Override
+    public List<Map<String, Object>> getConversationHistoryWithFirstMessageInMySQL(Long userId) {
+        List<Conversation> conversations = this.list(new LambdaQueryWrapper<Conversation>()
+                .eq(Conversation::getUserId, userId)
+                .orderByAsc(Conversation::getStartTimestamp));
+
+        log.info("用户ID为 {} 的对话数量: {}", userId, conversations.size());
+
+        List<Map<String, Object>> conversationHistory = conversations.stream()
+                .map(conversation -> {
+                    log.info("正在处理对话ID: {}", conversation.getId());
+
+                    ChatMessage firstMessage = chatMessageService.getOne(new LambdaQueryWrapper<ChatMessage>() // getOne 由 IService 接口提供，用于从数据库中获取一条符合条件的记录。如果有多条记录满足条件，则返回第一条。
+                            .eq(ChatMessage::getConversationId, conversation.getId()) // 筛选出 conversationId 等于 conversation.getId() 的 ChatMessage 记录。
+                            .eq(ChatMessage::getSender, "user") // 这个条件进一步筛选出 sender 字段等于 "user" 的记录。
+                            .orderByAsc(ChatMessage::getTimestamp) // 这个条件指定了对结果按照 timestamp 字段进行升序排序。
+                            .last("LIMIT 1")); // 限制查询结果最多返回一条记录，即使有多个记录满足条件，也只会返回第一条。
+
+                    log.info("对话ID {} 的第一条用户消息: {}", conversation.getId(),
+                            firstMessage != null ? firstMessage.getContent() : "未找到消息");
+
+                    Map<String, Object> resultMap = new HashMap<>();
+                    resultMap.put("conversationId", conversation.getId().toString());
+                    resultMap.put("startTimestamp", conversation.getStartTimestamp());
+                    resultMap.put("firstMessage", firstMessage != null ? firstMessage.getContent() : "");
+
+                    return resultMap;
+                })
+                .collect(Collectors.toList());
+
+        log.info("对话历史数据: {}", conversationHistory);
+
+        // 将数据存储到 Redis 中
+        try {
+            String conversationsJsonNew = objectMapper.writeValueAsString(conversationHistory);
+            redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJsonNew);
+            log.info("用户ID {} 的对话历史已加载到 Redis", userId);
+        } catch (JsonProcessingException e) {
+            log.error("将对话历史转换为 JSON 时出错: ", e);
+        }
 
         return conversationHistory;
     }
@@ -114,21 +183,4 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         return conversationDetail;
     }
 
-    @Override
-    public void loadUserConversationsToRedis(Long userId) {
-        try {
-            // 获取用户的对话历史
-            List<Map<String, Object>> conversations = this.getConversationHistoryWithFirstMessage(userId);
-
-            // 将对话历史转换为 JSON 字符串
-            String conversationsJson = objectMapper.writeValueAsString(conversations);
-
-            // 存储到 Redis 中，使用适当的 key
-            redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJson);
-
-            log.info("用户ID {} 的对话历史已加载到 Redis", userId);
-        } catch (JsonProcessingException e) {
-            log.error("将对话历史转换为 JSON 时出错: ", e);
-        }
-    }
 }

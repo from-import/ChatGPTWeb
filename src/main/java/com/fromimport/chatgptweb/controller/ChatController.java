@@ -50,6 +50,7 @@ public class ChatController {
 
     @PostMapping("/chat")
     public Mono<Map<String, Object>> chat(@RequestBody ChatRequest chatRequest, ServletRequest request) throws JsonProcessingException {
+        // @RequestBody 注解的作用是将请求体中的 JSON 数据转换为 ChatRequest 对象。
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         User user = (User) httpRequest.getSession().getAttribute("user");
         Long userId = user != null ? user.getId() : null;
@@ -84,6 +85,8 @@ public class ChatController {
 
     @GetMapping("/chat/{conversationId}")
     public Mono<Map<String, Object>> getChatResponse(@PathVariable String conversationId) {
+        // @PathVariable 注解用于将 URL 中的路径变量映射到方法参数上。
+        // 在这个例子中，路径变量 {conversationId} 的值被映射到 conversationId 参数。
         Long conversationIdLong = Long.parseLong(conversationId);
 
         // 从 Redis 中获取聊天记录

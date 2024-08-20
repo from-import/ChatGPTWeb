@@ -12,5 +12,5 @@ public interface ConversationService extends IService<Conversation> {
     Conversation getOngoingConversation(Long userId);
     List<Map<String, Object>> getConversationHistoryWithFirstMessage(Long userId);
     List<Map<String, Object>> getConversationHistoryWithConversationId(String conversationId);
-    void loadUserConversationsToRedis(Long userId);
+    List<Map<String, Object>> getConversationHistoryWithFirstMessageInMySQL(Long userId);
 }

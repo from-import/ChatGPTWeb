@@ -50,6 +50,7 @@ public class UserController {
 
                 responseMap.put("message", "登录成功");
                 responseMap.put("userId", loggedInUser.getId().toString()); // 添加 userId 到响应中
+                log.info("用户登录成功: {}", loggedInUser);
                 return ResponseEntity.ok(responseMap);
             } else {
                 responseMap.put("message", "用户名或密码错误");

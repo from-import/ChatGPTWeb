@@ -149,6 +149,7 @@
         }
 
         try {
+            // const response = await fetch(`/api/conversations/history?userId=${userId}`);
             const response = await fetch(`/api/conversations/history?userId=${userId}`);
             if (!response.ok) {
                 throw new Error('Network response was not ok');

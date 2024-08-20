@@ -1,14 +1,19 @@
 package com.fromimport.chatgptweb.aspect;
 
 import com.fromimport.chatgptweb.annotation.LoadConversationsToRedis;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fromimport.chatgptweb.service.ChatMessageService;
 import com.fromimport.chatgptweb.service.ConversationService;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 
 @Aspect
@@ -16,16 +21,23 @@ import java.util.Map;
 @Slf4j
 public class LoadConversationsAspect {
 
-    private final ConversationService conversationService;
+    private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper;
 
     @Autowired
-    public LoadConversationsAspect(ConversationService conversationService) {
-        this.conversationService = conversationService;
+    public LoadConversationsAspect(RedisTemplate<String, String> redisTemplate,
+                                   ObjectMapper objectMapper) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
     }
 
+    @Autowired
+    private ConversationService conversationService;
+
     @AfterReturning(pointcut = "@annotation(loadConversationsToRedis)", returning = "response")
-    public void afterLogin(Object response, LoadConversationsToRedis loadConversationsToRedis) {
+    public void afterLogin(Object response, LoadConversationsToRedis loadConversationsToRedis) throws JsonProcessingException {
         if (response instanceof ResponseEntity) {
+            log.info("用户登录成功，开始尝试通过afterLogin加载对话到 Redis");
             ResponseEntity<?> responseEntity = (ResponseEntity<?>) response;
             Object body = responseEntity.getBody();
 
@@ -38,7 +50,16 @@ public class LoadConversationsAspect {
 
                 if (userId != null) {
                     log.info("用户ID {} 登录成功，开始加载对话到 Redis", userId);
-                    conversationService.loadUserConversationsToRedis(userId);
+                    // 获取用户的对话历史
+                    List<Map<String, Object>> conversations = conversationService.getConversationHistoryWithFirstMessageInMySQL(userId);
+                    // 将对话历史转换为 JSON 字符串
+                    String conversationsJson = objectMapper.writeValueAsString(conversations);
+                    log.info("用户ID {} 的对话历史数据: {}", userId, conversationsJson);
+
+                    // 存储到 Redis 中，使用适当的 key
+                    redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJson);
+                    log.info("用户ID {} 的对话历史已加载到 Redis", userId);
+
                 } else {
                     log.warn("登录响应中未找到 userId");
                 }
@@ -49,4 +70,5 @@ public class LoadConversationsAspect {
             log.error("响应不是 ResponseEntity 类型: {}", response);
         }
     }
+
 }
