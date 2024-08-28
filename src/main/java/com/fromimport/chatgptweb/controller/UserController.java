@@ -1,6 +1,7 @@
 package com.fromimport.chatgptweb.controller;
 
 import com.fromimport.chatgptweb.annotation.LoadConversationsToRedis;
+import com.fromimport.chatgptweb.common.JwtUtils;
 import com.fromimport.chatgptweb.entity.User;
 import com.fromimport.chatgptweb.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,18 +48,24 @@ public class UserController {
 
     @PostMapping("/login")
     @LoadConversationsToRedis
-    public ResponseEntity<Map<String, String>> loginUser(@RequestBody User user, HttpSession session) {
+    public ResponseEntity<Map<String, String>> loginUser(HttpServletRequest request, @RequestBody User user) {
         Map<String, String> responseMap = new HashMap<>();
         try {
             log.info("用户正在尝试登录：username={}", user.getUsername());
-            // 直接在此处对密码进行验证
             boolean authenticatedUser = userService.authenticate(user.getUsername(), user.getPassword());
 
             if (authenticatedUser) {
                 User loggedInUser = userService.getUserByUsername(user.getUsername());
-                session.setAttribute("user", loggedInUser); // 存储完整用户信息到 session
+                String token = JwtUtils.generateToken(loggedInUser.getUsername());
+
+                // 创建 Session 并存储用户信息
+                HttpSession session = request.getSession(true);
+                session.setAttribute("user", loggedInUser);
+
                 responseMap.put("message", "登录成功");
-                responseMap.put("userId", loggedInUser.getId().toString()); // 添加 userId 到响应中
+                responseMap.put("userId", loggedInUser.getId().toString());
+                responseMap.put("token", token);
+
                 log.info("用户登录成功: {}", loggedInUser);
                 return ResponseEntity.ok(responseMap);
             } else {

@@ -128,9 +128,18 @@
 </div>
 
 <script>
+    // Function to get the stored JWT token
+    function getJwtToken() {
+        return localStorage.getItem('jwtToken');
+    }
+
     async function getUserId() {
         try {
-            const response = await fetch('/api/session/userId');
+            const response = await fetch('/api/session/userId', {
+                headers: {
+                    'Authorization': `Bearer ${getJwtToken()}`
+                }
+            });
             if (!response.ok) {
                 throw new Error('Failed to get userId');
             }
@@ -149,8 +158,11 @@
         }
 
         try {
-            // const response = await fetch(`/api/conversations/history?userId=${userId}`);
-            const response = await fetch(`/api/conversations/history?userId=${userId}`);
+            const response = await fetch(`/api/conversations/history?userId=${userId}`, {
+                headers: {
+                    'Authorization': `Bearer ${getJwtToken()}`
+                }
+            });
             if (!response.ok) {
                 throw new Error('Network response was not ok');
             }
@@ -180,7 +192,11 @@
 
     async function loadConversationDetail(conversationId) {
         try {
-            const response = await fetch(`/api/conversations/${conversationId}`);
+            const response = await fetch(`/api/conversations/${conversationId}`, {
+                headers: {
+                    'Authorization': `Bearer ${getJwtToken()}`
+                }
+            });
             if (!response.ok) {
                 throw new Error('Network response was not ok');
             }
@@ -233,6 +249,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getJwtToken()}`
                 },
                 body: JSON.stringify({ message: messageText }),
             });
@@ -257,7 +274,11 @@
 
         const intervalId = setInterval(async () => {
             try {
-                const response = await fetch(`/api/chat/${conversationId}`);
+                const response = await fetch(`/api/chat/${conversationId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getJwtToken()}`
+                    }
+                });
                 const data = await response.json();
 
                 if (data.status === 'completed') {
@@ -283,6 +304,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getJwtToken()}`
                 },
             });
 

@@ -10,7 +10,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
-import com.fromimport.chatgptweb.entity.User;
+import com.fromimport.chatgptweb.common.JwtUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,14 +31,29 @@ public class AuthFilter implements Filter {
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
         String requestURI = httpRequest.getRequestURI();
-        User user = (User) httpRequest.getSession().getAttribute("user");
+        String token = httpRequest.getHeader("Authorization");
 
-        logger.info("收到请求：URI={}, 用户登录状态={}", requestURI, user != null ? "已登录" : "未登录");
+        logger.info("收到请求：URI={}, Authorization头={}", requestURI, token);
 
-        // 如果请求路径是 /api/register，允许访问
-        if (user != null || requestURI.equals("/login.html") || requestURI.equals("/register.html")
-                || requestURI.equals("/api/login") || requestURI.startsWith("/api/")) {
-            logger.info("允许访问：URI={}", requestURI);
+        // 检查是否有 JWT，并验证其有效性
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7); // 去掉 "Bearer " 前缀
+
+            if (JwtUtils.validateToken(token, JwtUtils.getUsernameFromToken(token))) {
+                logger.info("JWT 验证通过：URI={}", requestURI);
+                chain.doFilter(request, response); // JWT 验证通过，继续处理请求
+                return;
+            } else {
+                logger.warn("JWT 验证失败：URI={}", requestURI);
+                httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                return; // JWT 无效，返回 401 未授权状态
+            }
+        }
+
+        // 如果是注册、登录相关的请求，直接放行
+        if (requestURI.equals("/login.html") || requestURI.equals("/register.html")
+                || requestURI.equals("/api/login") || requestURI.equals("/api/register")) {
+            logger.info("允许访问公共资源：URI={}", requestURI);
             chain.doFilter(request, response);
         } else {
             logger.warn("未授权访问尝试，重定向到登录页面：URI={}", requestURI);

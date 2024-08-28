@@ -2,6 +2,7 @@ package com.fromimport.chatgptweb.serviceImpl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fromimport.chatgptweb.common.JwtUtils;
 import com.fromimport.chatgptweb.entity.User;
 import com.fromimport.chatgptweb.mapper.UserMapper;
 import com.fromimport.chatgptweb.service.UserService;
@@ -41,14 +42,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public boolean authenticate(String username, String password) {
-        User user = lambdaQuery().eq(User::getUsername, username).one();; // 根据用户名查询用户
-        // 如果用户存在，检查密码是否匹配
-        if (user != null) {
-            // 使用 BCrypt 来验证密码
-            return BCrypt.checkpw(password, user.getPassword());
-        }
-        // 用户不存在或密码不匹配
-        return false;
+        User user = lambdaQuery().eq(User::getUsername, username).one(); // 根据用户名查询用户
+        log.info("用户 " + username + " 正在尝试登录。");
+        return user != null && BCrypt.checkpw(password, user.getPassword());
     }
 
     @Override

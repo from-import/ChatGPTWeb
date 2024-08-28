@@ -107,8 +107,18 @@
             });
 
             if (response.ok) {
-                // If login is successful, redirect to index.html
-                window.location.href = '/index.html';
+                const result = await response.json();
+
+                // Assuming the JWT is returned in the result.token
+                const token = result.token;
+
+                // Store the JWT in localStorage
+                localStorage.setItem('jwtToken', token);
+
+                // Ensure storage is complete before redirecting
+                setTimeout(() => {
+                    window.location.href = '/index.html';
+                }, 200); // Slight delay to ensure storage completion
             } else {
                 // If login fails, handle error response
                 const result = await response.json();
