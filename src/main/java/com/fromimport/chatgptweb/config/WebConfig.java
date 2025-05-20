@@ -8,17 +8,18 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
-
     @Autowired
     private JwtInterceptor jwtInterceptor;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(jwtInterceptor)
-                .addPathPatterns("/api/**") // 只拦截 /api/** 路径下的请求
+                .addPathPatterns("/**")            // 拦截所有路径
                 .excludePathPatterns(
-                        "/api/login",     // 放行登录接口
-                        "/api/register"   // 放行注册接口
+                        "/login.html",                // 放行登录页
+                        "/register.html",             // 放行注册页
+                        "/api/login", "/api/register",// 放行登录/注册接口
+                        "/css/**", "/js/**", "/images/**" // 放行静态资源
                 );
     }
 }
