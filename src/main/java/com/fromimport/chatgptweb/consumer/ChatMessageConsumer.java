@@ -1,5 +1,6 @@
 package com.fromimport.chatgptweb.consumer;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fromimport.chatgptweb.service.ChatMessageService;
 import com.fromimport.chatgptweb.service.OpenAIService;
@@ -16,10 +17,14 @@ import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 @Component
 @Slf4j
 public class ChatMessageConsumer {
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private OpenAIService openAIService;
@@ -46,6 +51,85 @@ public class ChatMessageConsumer {
      *     通过将消息处理任务提交到线程池 (taskExecutor.submit)，主线程不会被阻塞，立即返回并继续监听队列中的新消息。这样即使某个任务耗时较长，也不会阻塞其他任务的执行。
      * @param payload
      */
+    @RabbitListener(queues = "chatQueue")
+    public void receiveMessage(String payload) {
+        log.info("收到 RabbitMQ 消息: {}", payload);
+        long startTime = System.currentTimeMillis();
+
+        Future<?> future = taskExecutor.submit(() -> {
+            try {
+                // 1. 解析 payload
+                Map<String, Object> data = objectMapper.readValue(payload, Map.class);
+                String userId         = (String) data.get("userId");
+                String conversationId = (String) data.get("conversationId");
+                String message        = (String) data.get("message");
+
+                log.info("提取的用户 ID: {}", userId);
+                log.info("提取的对话 ID: {}", conversationId);
+                log.info("提取的消息内容: {}", message);
+
+                // 2. 调用 AnythingLLM 接口
+                openAIService.workspaceChat("123", message, "query")
+                        .subscribe(rawJson -> {
+                            try {
+                                // 3. 从 JSON 中提取 textResponse
+                                JsonNode root = objectMapper.readTree(rawJson);
+                                String text = root.path("textResponse").asText("");
+
+                                // 4. 格式化：去除多余空行，每段间隔一个空行
+                                String formatted = text.lines()
+                                        .map(String::trim)
+                                        .filter(line -> !line.isEmpty())
+                                        .collect(Collectors.joining("\n\n"));
+
+                                log.info("格式化后的响应：{}", formatted);
+
+                                // 5. 保存到数据库
+                                chatMessageService.saveChatMessage(
+                                        Long.parseLong(userId),
+                                        Long.parseLong(conversationId),
+                                        formatted,
+                                        "chatgpt"
+                                );
+
+                                long endTime = System.currentTimeMillis();
+                                log.info("有线程池调度的运行时间: {} ms", (endTime - startTime));
+
+                                // 6. 存入 Redis
+                                redisTemplate.opsForValue()
+                                        .set("chat_response_" + conversationId, formatted);
+                                log.info("将响应存储到 Redis: {}", formatted);
+
+                                // 7. 通过 WebSocket 推送给前端
+                                messagingTemplate.convertAndSend(
+                                        "/topic/chat/" + userId,
+                                        formatted
+                                );
+                                log.info("消息通过 WebSocket 推送给用户: {}", userId);
+
+                            } catch (Exception ex) {
+                                log.error("解析或处理响应失败: {}", ex.getMessage(), ex);
+                            }
+                        });
+
+            } catch (Exception e) {
+                log.error("处理 RabbitMQ 消息失败: {}", e.getMessage(), e);
+            }
+        });
+
+        log.info("提交任务到线程池处理消息: {}", payload);
+        try {
+            future.get(30, TimeUnit.SECONDS);
+            log.info("线程池任务成功完成: {}", payload);
+        } catch (TimeoutException te) {
+            log.error("线程池任务超时未完成: {}", te.getMessage(), te);
+        } catch (Exception e) {
+            log.error("等待线程池任务完成失败: {}", e.getMessage(), e);
+        }
+    }
+
+
+    /*
     @RabbitListener(queues = "chatQueue")
     public void receiveMessage(String payload) {
         log.info("收到 RabbitMQ 消息: {}", payload);
@@ -101,4 +185,5 @@ public class ChatMessageConsumer {
             log.error("等待线程池任务完成失败: {}", e.getMessage(), e);
         }
     }
+    */
 }

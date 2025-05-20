@@ -15,10 +15,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -107,6 +109,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         try {
             String conversationsJsonNew = objectMapper.writeValueAsString(conversationHistory);
             redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJsonNew);
+
             log.info("用户ID {} 的对话历史已加载到 Redis", userId);
         } catch (JsonProcessingException e) {
             log.error("将对话历史转换为 JSON 时出错: ", e);
@@ -150,8 +153,21 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         // 将数据存储到 Redis 中
         try {
             String conversationsJsonNew = objectMapper.writeValueAsString(conversationHistory);
-            redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJsonNew);
+
+            // redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJsonNew);
+            String cacheKey = "user:conversations:" + userId;
+            redisTemplate.opsForValue().set(cacheKey, conversationsJsonNew);
+            // 设置 10 分钟后过期
+            redisTemplate.expire(cacheKey, 10, TimeUnit.MINUTES);
+            log.info("用户ID {} 的对话历史已加载到 Redis，键 {} 将在 10 分钟后过期", userId, cacheKey);
             log.info("用户ID {} 的对话历史已加载到 Redis", userId);
+            /*
+            当业务量激增或者 Redis 节点重启、故障时，如果所有缓存都瞬间失效，会引发大量并发请求打到数据库上，造成数据库压力骤增，甚至崩溃。
+            通过对各个 key 设置不同或随机的过期时间，可以让缓存失效的时间点错开，缓解“缓存雪崩”风险；同时也可以结合业务写入、对话结束时主动删除 key，进一步平滑失效过程。
+            如果不主动删除或过期，Redis 中会不断堆积历史会话列表数据；随着用户量和对话量的增长，内存占用会越来越高。
+            为对话历史列表设置合理的生存周期（例如 5–10 分钟），可以让过时的数据自动被垃圾回收，避免占用无谓的内存。
+             */
+
         } catch (JsonProcessingException e) {
             log.error("将对话历史转换为 JSON 时出错: ", e);
         }
