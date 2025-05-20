@@ -66,6 +66,12 @@ public class ChatController {
         // 保存用户的消息
         chatMessageService.saveChatMessage(userId, conversation.getId(), message, "user");
 
+        // 保证后续读取到的对话历史是最新的。因为在用户发送新消息、并将消息写入数据库之后，
+        // 原来缓存中保存的“对话历史”已经过时了，如果不主动清除，下次有人去读这个缓存就会拿到旧的数据。通过在写操作后立即调用
+        // 就能在下一次读取时触发“缓存未命中”，从数据库重新加载最新的对话列表并回写到 Redis，这样就既利用了缓存提速，又避免了脏数据的风险。
+        String historyKey = "user:conversations:" + userId;
+        redisTemplate.delete(historyKey);
+
         // 构造消息
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());
@@ -119,7 +125,18 @@ public class ChatController {
         if (conversation != null) {
             conversation.setEndTimestamp(LocalDateTime.now());
             conversationService.updateById(conversation); // 更新对话的结束时间
+
+            // 需要清除同一个 key
+            /*
+            在对话结束的逻辑里，主动删除同一个 user:conversations:{userId} 缓存键是为了在后续读取用户对话历史时，能够重新从数据库加载最新的数据并回写缓存，否则：
+            缓存中的对话列表仍然保留“未结束”的旧记录，用户再次调用获取历史接口时会拿到过期的状态（比如依然看到那个对话处于进行中），造成数据不一致；
+            如果不清除缓存，就必须等到缓存自动过期（比如 5-10 分钟后）才能看到新的 “已结束” 标记，这样会导致用户在这段时间里无法感知对话状态的变化；
+            主动失效之后，下一次调用获取历史时由于缓存未命中，就会触发“先读库再回写缓存”的流程，将结束时间更新后的最新列表重新缓存，保证缓存与数据库始终保持同步。
+             */
+            String historyKey = "user:conversations:" + userId;
+            redisTemplate.delete(historyKey);
             log.info("对话 {} 已结束", conversation.getId());
+
             return Mono.just("对话已结束");
         } else {
             return Mono.just("没有进行中的对话");

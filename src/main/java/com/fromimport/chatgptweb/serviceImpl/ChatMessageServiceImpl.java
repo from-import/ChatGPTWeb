@@ -8,6 +8,7 @@ import com.fromimport.chatgptweb.service.RabbitMQService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,9 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Autowired
     private ChatMessageMapper chatMessageMapper; // 注入 ChatMessageMapper
 
+    @Autowired               // 注入 Redis 模板
+    private StringRedisTemplate redisTemplate;
+
 
     @Override
     public Mono<Void> saveChatMessage(Long userId, Long conversationId, String message, String sender) {
@@ -39,6 +43,17 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
 
             // 使用 MyBatis-Plus 的 chatMessageMapper 将消息插入到数据库中
             chatMessageMapper.insert(chatMessage);
+
+            // 写库成功后立即删除对话历史缓存，保证下一次重读 DB 并刷新到 Redis
+            String historyKey = "user:conversations:" + userId;
+            redisTemplate.delete(historyKey);
+            log.info("插入消息后清除用户对话历史缓存: {}", historyKey);
+
+            // 如果存在未读的对话响应缓存，也一并清除
+            String responseKey = "chat_response:" + conversationId;
+            redisTemplate.delete(responseKey);
+            log.info("插入消息后清除对话响应缓存: {}", responseKey);
+
 
         } catch (Exception e) {
             // 捕捉并记录可能发生的异常

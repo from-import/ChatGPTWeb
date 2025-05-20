@@ -48,7 +48,8 @@ public class ChatMessageConsumer {
      *     线程池通过创建多个线程来同时执行任务，避免了单线程情况下每次处理完一个消息后才能处理下一个的问题，从而提高系统的并发能力。
      *
      *     任务异步化：
-     *     通过将消息处理任务提交到线程池 (taskExecutor.submit)，主线程不会被阻塞，立即返回并继续监听队列中的新消息。这样即使某个任务耗时较长，也不会阻塞其他任务的执行。
+     *     通过将消息处理任务提交到线程池 (taskExecutor.submit)，主线程不会被阻塞，立即返回并继续监听队列中的新消息。
+     *     这样即使某个任务耗时较长，也不会阻塞其他任务的执行。
      * @param payload
      */
     @RabbitListener(queues = "chatQueue")
