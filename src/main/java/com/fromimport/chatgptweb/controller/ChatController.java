@@ -10,6 +10,8 @@ import com.fromimport.chatgptweb.service.ChatMessageService;
 import com.fromimport.chatgptweb.service.ConversationService;
 import com.fromimport.chatgptweb.service.OpenAIService;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -39,6 +41,8 @@ public class ChatController {
     private RabbitTemplate rabbitTemplate; // 注入 RabbitTemplate
     @Autowired
     private StringRedisTemplate redisTemplate; // 注入 RedisTemplate
+    @Autowired // 注入Redisson
+    private RedissonClient redissonClient;
 
     @GetMapping("/session/userId")
     public ResponseEntity<Map<String, Long>> getUserId(HttpServletRequest request) {
@@ -120,39 +124,38 @@ public class ChatController {
             return Mono.error(new RuntimeException("用户未登录或会话过期"));
         }
 
-        // 获取正在进行的对话
-        Conversation conversation = conversationService.getOngoingConversation(userId);
-        if (conversation != null) {
-            conversation.setEndTimestamp(LocalDateTime.now());
-            conversationService.updateById(conversation); // 更新对话的结束时间
-
-            // 需要清除同一个 key
-            /*
-            在对话结束的逻辑里，主动删除同一个 user:conversations:{userId} 缓存键是为了在后续读取用户对话历史时，能够重新从数据库加载最新的数据并回写缓存，否则：
-            缓存中的对话列表仍然保留“未结束”的旧记录，用户再次调用获取历史接口时会拿到过期的状态（比如依然看到那个对话处于进行中），造成数据不一致；
-            如果不清除缓存，就必须等到缓存自动过期（比如 5-10 分钟后）才能看到新的 “已结束” 标记，这样会导致用户在这段时间里无法感知对话状态的变化；
-            主动失效之后，下一次调用获取历史时由于缓存未命中，就会触发“先读库再回写缓存”的流程，将结束时间更新后的最新列表重新缓存，保证缓存与数据库始终保持同步。
-             */
-            String historyKey = "user:conversations:" + userId;
-            redisTemplate.delete(historyKey);
-            log.info("对话 {} 已结束", conversation.getId());
-
-            return Mono.just("对话已结束");
-        } else {
+        RLock lock = redissonClient.getLock("lock:conversation:end:" + userId);
+        lock.lock();
+        try {
+            Conversation conv = conversationService.getOngoingConversation(userId);
+            if (conv != null) {
+                conv.setEndTimestamp(LocalDateTime.now());
+                conversationService.updateById(conv);
+                redisTemplate.delete("user:conversations:" + userId);
+                return Mono.just("对话已结束");
+            }
             return Mono.just("没有进行中的对话");
+        } finally {
+            lock.unlock();
         }
     }
 
-    private Conversation getOrCreateConversation(Long userId) {
-        // 查询数据库中是否有一个尚未结束的对话
-        Conversation conversation = conversationService.getOngoingConversation(userId);
-        if (conversation == null) {
-            // 如果没有找到尚未结束的对话，创建一个新的对话
-            conversation = new Conversation();
-            conversation.setUserId(userId);
-            conversation.setStartTimestamp(LocalDateTime.now());
-            conversationService.save(conversation); // 保存新的对话到数据库
+    public Conversation getOrCreateConversation(Long userId) {
+        RLock lock = redissonClient.getLock("lock:conversation:create:" + userId);
+        lock.lock();
+        try {
+            Conversation conv = conversationService.getOngoingConversation(userId);
+            if (conv == null) {
+                conv = new Conversation();
+                conv.setUserId(userId);
+                conv.setStartTimestamp(LocalDateTime.now());
+                conversationService.save(conv);
+                // 写库后立即删除老缓存，让下次读走库并回填
+                redisTemplate.delete("user:conversations:" + userId);
+            }
+            return conv;
+        } finally {
+            lock.unlock();
         }
-        return conversation;
     }
 }

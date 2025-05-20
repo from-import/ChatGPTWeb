@@ -6,6 +6,8 @@ import com.fromimport.chatgptweb.mapper.ChatMessageMapper;
 import com.fromimport.chatgptweb.service.ChatMessageService;
 import com.fromimport.chatgptweb.service.RabbitMQService;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -16,50 +18,76 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
 @Transactional
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage> implements ChatMessageService {
 
-    @Autowired
-    private ChatMessageMapper chatMessageMapper; // 注入 ChatMessageMapper
+    @Autowired // 注入 ChatMessageMapper
+    private ChatMessageMapper chatMessageMapper;
 
-    @Autowired               // 注入 Redis 模板
+    @Autowired // 注入 Redis 模板
     private StringRedisTemplate redisTemplate;
 
+    @Autowired // 注入Redisson
+    private RedissonClient redissonClient;
+
+
+    /**
+     * 执行真正的消息写库操作
+     */
+    private void insertMessage(Long userId, Long conversationId, String message, String sender) {
+        ChatMessage chatMessage = new ChatMessage();
+        chatMessage.setUserId(userId);
+        chatMessage.setConversationId(conversationId);
+        chatMessage.setContent(message);
+        chatMessage.setSender(sender);
+        chatMessage.setTimestamp(LocalDateTime.now());
+        chatMessageMapper.insert(chatMessage);
+    }
 
     @Override
     public Mono<Void> saveChatMessage(Long userId, Long conversationId, String message, String sender) {
+        String lockKey = "lock:user:conversations:" + userId;
+        RLock lock = redissonClient.getLock(lockKey);
+        boolean locked = false;
         try {
-            // 创建一个新的 ChatMessage 实例
-            ChatMessage chatMessage = new ChatMessage();
-            // 设置聊天消息的属性
-            chatMessage.setUserId(userId);  // 设置用户 ID
-            chatMessage.setConversationId(conversationId);  // 设置对话 ID
-            chatMessage.setContent(message);  // 设置消息内容
-            chatMessage.setSender(sender);  // 设置消息发送者
-            chatMessage.setTimestamp(LocalDateTime.now());  // 设置消息时间戳为当前时间
+            // 最多等待 5 秒去拿锁，拿到锁后 10 秒自动解锁
+            locked = lock.tryLock(5, 10, TimeUnit.SECONDS);
+            if (!locked) {
+                log.warn("无法获取分布式锁 {}，直接写库但不清理缓存", lockKey);
+                // 仍然写库，但跳过缓存删除
+                insertMessage(userId, conversationId, message, sender);
+                return Mono.empty();
+            }
+            // 加锁成功后，先写库
+            insertMessage(userId, conversationId, message, sender);
 
-            // 使用 MyBatis-Plus 的 chatMessageMapper 将消息插入到数据库中
-            chatMessageMapper.insert(chatMessage);
-
-            // 写库成功后立即删除对话历史缓存，保证下一次重读 DB 并刷新到 Redis
+            // 写库后再删除各类相关缓存
             String historyKey = "user:conversations:" + userId;
             redisTemplate.delete(historyKey);
             log.info("插入消息后清除用户对话历史缓存: {}", historyKey);
 
-            // 如果存在未读的对话响应缓存，也一并清除
             String responseKey = "chat_response:" + conversationId;
             redisTemplate.delete(responseKey);
             log.info("插入消息后清除对话响应缓存: {}", responseKey);
 
-
+            return Mono.empty();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("获取分布式锁 {} 过程中被中断", lockKey, e);
+            // 退化为无锁写库
+            insertMessage(userId, conversationId, message, sender);
+            return Mono.empty();
         } catch (Exception e) {
-            // 捕捉并记录可能发生的异常
-            log.error("Error saving chat message", e);
+            log.error("保存消息并清理缓存时发生异常", e);
+            return Mono.empty();
+        } finally {
+            if (locked && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
-        // 由于没有异步操作，这里直接返回 Mono.empty() 以表示方法已完成
-        return Mono.empty();
     }
 }
