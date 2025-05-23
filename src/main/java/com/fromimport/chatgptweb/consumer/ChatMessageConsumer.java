@@ -2,6 +2,7 @@ package com.fromimport.chatgptweb.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fromimport.chatgptweb.service.ChatMessageService;
 import com.fromimport.chatgptweb.service.OpenAIService;
 import lombok.extern.slf4j.Slf4j;
@@ -9,10 +10,18 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -69,15 +78,52 @@ public class ChatMessageConsumer {
                 log.info("提取的对话 ID: {}", conversationId);
                 log.info("提取的消息内容: {}", message);
 
-                // 2. 调用 AnythingLLM 接口
-                openAIService.workspaceChat("123", message, "query")
+                // 2. 调用关键词抽取服务
+                String keywordPrompt = "";
+                try {
+                    Map<String, String> keywordRequest = new HashMap<>();
+                    keywordRequest.put("text", message);
+
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                    HttpEntity<Map<String, String>> entity = new HttpEntity<>(keywordRequest, headers);
+
+                    ResponseEntity<String> response = new RestTemplate().postForEntity(
+                            "http://127.0.0.1:5000/predict", entity, String.class);
+
+                    JsonNode rootNode = objectMapper.readTree(response.getBody());
+                    ArrayNode spoArray = (ArrayNode) rootNode.path("spo_list_pred");
+
+                    List<String> triples = new ArrayList<>();
+                    for (JsonNode spo : spoArray) {
+                        String subject = spo.path("subject").asText("");
+                        String predicate = spo.path("predicate").asText("");
+                        String object = spo.path("object").asText("");
+                        if (!subject.isEmpty() && !object.isEmpty()) {
+                            triples.add(subject + " 的 " + predicate + " 是 " + object);
+                        }
+                    }
+
+                    if (!triples.isEmpty()) {
+                        keywordPrompt = "以下是提问相关的医学知识：\n" +
+                                String.join("；", triples) + "\n\n";
+                    }
+                } catch (Exception ex) {
+                    log.warn("关键词抽取失败，继续使用原始问题提问：{}", ex.getMessage());
+                }
+
+                // 3. 拼接 Prompt
+                String fullPrompt = keywordPrompt + message;
+
+                // 4. 调用 AnythingLLM 接口
+                openAIService.workspaceChat("123", fullPrompt, "query")
                         .subscribe(rawJson -> {
                             try {
-                                // 3. 从 JSON 中提取 textResponse
+                                // 5. 从 JSON 中提取 textResponse
                                 JsonNode root = objectMapper.readTree(rawJson);
                                 String text = root.path("textResponse").asText("");
 
-                                // 4. 格式化：去除多余空行，每段间隔一个空行
+                                // 6. 格式化响应内容
                                 String formatted = text.lines()
                                         .map(String::trim)
                                         .filter(line -> !line.isEmpty())
@@ -85,7 +131,7 @@ public class ChatMessageConsumer {
 
                                 log.info("格式化后的响应：{}", formatted);
 
-                                // 5. 保存到数据库
+                                // 7. 保存到数据库
                                 chatMessageService.saveChatMessage(
                                         Long.parseLong(userId),
                                         Long.parseLong(conversationId),
@@ -96,12 +142,12 @@ public class ChatMessageConsumer {
                                 long endTime = System.currentTimeMillis();
                                 log.info("有线程池调度的运行时间: {} ms", (endTime - startTime));
 
-                                // 6. 存入 Redis
+                                // 8. 存入 Redis
                                 redisTemplate.opsForValue()
                                         .set("chat_response_" + conversationId, formatted);
                                 log.info("将响应存储到 Redis: {}", formatted);
 
-                                // 7. 通过 WebSocket 推送给前端
+                                // 9. 推送到前端
                                 messagingTemplate.convertAndSend(
                                         "/topic/chat/" + userId,
                                         formatted
@@ -128,6 +174,7 @@ public class ChatMessageConsumer {
             log.error("等待线程池任务完成失败: {}", e.getMessage(), e);
         }
     }
+
 
 
     /*
