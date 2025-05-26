@@ -41,9 +41,11 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     @Override
     public Conversation getOngoingConversation(Long userId) {
         return lambdaQuery()
-                .eq(Conversation::getUserId, userId) // WHERE user_id = #{userId}
-                .isNull(Conversation::getEndTimestamp) // AND end_timestamp IS NULL
-                .one(); // LIMIT 1
+                .eq(Conversation::getUserId, userId)
+                .isNull(Conversation::getEndTimestamp)
+                .orderByDesc(Conversation::getStartTimestamp) // 取最新的那个未结束会话
+                .last("LIMIT 1")
+                .one();
     }
 
     @Override
