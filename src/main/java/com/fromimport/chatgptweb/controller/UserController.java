@@ -42,6 +42,27 @@ public class UserController {
         }
     }
 
+    @GetMapping("/session/userId")
+    public ResponseEntity<?> getUserIdFromToken(@RequestHeader("Authorization") String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            try {
+                String username = JwtUtils.getUsernameFromToken(token);
+                User user = userService.getUserByUsername(username);
+                if (user != null) {
+                    return ResponseEntity.ok(Map.of("userId", user.getId()));
+                } else {
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User not found");
+                }
+            } catch (Exception e) {
+                log.error("JWT解析失败：{}", e.getMessage());
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid token");
+            }
+        }
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Missing token");
+    }
+
+
     private String hashPassword(String password) {
         return BCrypt.hashpw(password, BCrypt.gensalt());
     }

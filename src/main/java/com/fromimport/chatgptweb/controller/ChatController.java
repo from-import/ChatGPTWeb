@@ -44,6 +44,9 @@ public class ChatController {
     @Autowired // 注入Redisson
     private RedissonClient redissonClient;
 
+    /*
+    // 原本的采用Session登录的@GetMapping
+    // 现在替换为JWT
     @GetMapping("/session/userId")
     public ResponseEntity<Map<String, Long>> getUserId(HttpServletRequest request) {
         User user = (User) request.getSession().getAttribute("user");
@@ -51,6 +54,7 @@ public class ChatController {
         response.put("userId", user != null ? user.getId() : null);
         return ResponseEntity.ok(response);
     }
+     */
 
     @PostMapping("/chat")
     public Mono<Map<String, Object>> chat(@RequestBody ChatRequest chatRequest, ServletRequest request) throws JsonProcessingException {
