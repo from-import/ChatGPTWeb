@@ -39,6 +39,13 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * 执行真正的消息写库操作
      */
     private void insertMessage(Long userId, Long conversationId, String message, String sender) {
+        // 防止同一条消息被重复保存到数据库中
+        String dedupKey = "chatmsg:d:" + userId + ":" + conversationId + ":" + message.hashCode();
+        Boolean inserted = redisTemplate.opsForValue().setIfAbsent(dedupKey, "1", 5, TimeUnit.MINUTES);
+        if (Boolean.FALSE.equals(inserted)) {
+            log.warn("重复消息忽略：{}", message);
+            return;
+        }
         ChatMessage chatMessage = new ChatMessage();
         chatMessage.setUserId(userId);
         chatMessage.setConversationId(conversationId);
