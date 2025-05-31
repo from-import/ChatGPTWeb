@@ -148,14 +148,13 @@ public class ChatMessageConsumer {
                         "CHATGPT"
                 );
 
-
-
                 long endTime = System.currentTimeMillis();
                 log.info("有线程池调度的运行时间: {} ms", (endTime - startTime));
 
                 // 9. 存入 Redis（用于前端快速读取最后一条回复）
                 redisTemplate.opsForValue()
                         .set("chat_response_" + conversationId, formatted);
+                redisTemplate.expire("chat_response_" + conversationId, 5, TimeUnit.MINUTES);
                 log.info("将响应存储到 Redis，Key = chat_response_{}", conversationId);
 
                 // 10. 推送到前端 WebSocket

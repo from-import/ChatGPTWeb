@@ -127,7 +127,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 .eq(Conversation::getUserId, userId)
                 .orderByAsc(Conversation::getStartTimestamp));
 
-        log.info("用户ID为 {} 的对话数量: {}", userId, conversations.size());
+        log.info("用户ID为 {} 的对话数量为: {}", userId, conversations.size());
 
         List<Map<String, Object>> conversationHistory = conversations.stream()
                 .map(conversation -> {
