@@ -128,6 +128,9 @@
             display: inline-block;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
 </head>
 <body>
 <!-- 注销按钮 -->
@@ -246,6 +249,28 @@
         }
     }
 
+    let stompClient = null;
+
+    async function connectWebSocket(userId) {
+        if (stompClient) return;  // 防止重复连接
+
+        const socket = new SockJS('/ws');  // 你的后端端点
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, () => {
+            stompClient.subscribe(`/topic/chat/${userId}`, (message) => {
+                const chatBox = document.getElementById('chat-box');
+                const botMessage = document.createElement('div');
+                botMessage.className = 'message bot';
+                botMessage.innerHTML = `<span>${message.body}</span>`;
+                chatBox.appendChild(botMessage);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            });
+        }, (error) => {
+            console.error('WebSocket连接失败:', error);
+        });
+    }
+
     async function sendMessage() {
         const userId = await getUserId();
         const input = document.getElementById('message-input');
@@ -281,7 +306,8 @@
             console.log('Conversation ID:', conversationId);
 
             // 开始轮询获取消息结果
-            pollForResponse(conversationId.toString());
+            // pollForResponse(conversationId.toString());
+            await connectWebSocket(userId);
 
         } catch (error) {
             console.error('Error:', error);
@@ -342,6 +368,7 @@
         const userId = await getUserId();
         if (userId) {
             await loadConversationHistory(userId);
+            await connectWebSocket(userId);
         } else {
             console.error('User ID not found');
         }

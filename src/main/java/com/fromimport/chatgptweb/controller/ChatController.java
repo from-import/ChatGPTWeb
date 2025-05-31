@@ -2,6 +2,7 @@ package com.fromimport.chatgptweb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fromimport.chatgptweb.common.JwtUtils;
 import com.fromimport.chatgptweb.config.RabbitMQConfig;
 import com.fromimport.chatgptweb.entity.Conversation;
 import com.fromimport.chatgptweb.entity.User;
@@ -9,6 +10,7 @@ import com.fromimport.chatgptweb.model.ChatRequest;
 import com.fromimport.chatgptweb.service.ChatMessageService;
 import com.fromimport.chatgptweb.service.ConversationService;
 import com.fromimport.chatgptweb.service.OpenAIService;
+import com.fromimport.chatgptweb.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -43,6 +45,11 @@ public class ChatController {
     private StringRedisTemplate redisTemplate; // 注入 RedisTemplate
     @Autowired // 注入Redisson
     private RedissonClient redissonClient;
+    @Autowired
+    private UserService userService;
+
+
+
 
     /*
     // 原本的采用Session登录的@GetMapping
@@ -58,44 +65,58 @@ public class ChatController {
 
     @PostMapping("/chat")
     public Mono<Map<String, Object>> chat(@RequestBody ChatRequest chatRequest, ServletRequest request) throws JsonProcessingException {
-        // @RequestBody 注解的作用是将请求体中的 JSON 数据转换为 ChatRequest 对象。
         HttpServletRequest httpRequest = (HttpServletRequest) request;
-        User user = (User) httpRequest.getSession().getAttribute("user");
-        Long userId = user != null ? user.getId() : null;
+
+        // 从请求头中获取 JWT
+        String token = httpRequest.getHeader("Authorization");
+        if (token == null || !token.startsWith("Bearer ")) {
+            return Mono.error(new RuntimeException("缺少或非法的 Authorization 令牌"));
+        }
+
+        token = token.substring(7).trim(); // 去掉 "Bearer "
+
+        // 提取用户名
+        String username;
+        try {
+            username = JwtUtils.getUsernameFromToken(token);
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("非法令牌或已过期"));
+        }
+
+        // 根据用户名查找用户
+        User user = userService.getUserByUsername(username);
+        if (user == null) {
+            return Mono.error(new RuntimeException("用户不存在"));
+        }
+        Long userId = user.getId();
 
         String message = chatRequest.getMessage();
-        if (userId == null) {
-            return Mono.error(new RuntimeException("用户未登录或会话过期"));
-        }
 
         // 获取或创建对话 (Conversation)
         Conversation conversation = getOrCreateConversation(userId);
 
-        // 保存用户的消息
+        // 保存用户消息
         chatMessageService.saveChatMessage(userId, conversation.getId(), message, "user");
 
-        // 保证后续读取到的对话历史是最新的。因为在用户发送新消息、并将消息写入数据库之后，
-        // 原来缓存中保存的“对话历史”已经过时了，如果不主动清除，下次有人去读这个缓存就会拿到旧的数据。通过在写操作后立即调用
-        // 就能在下一次读取时触发“缓存未命中”，从数据库重新加载最新的对话列表并回写到 Redis，这样就既利用了缓存提速，又避免了脏数据的风险。
+        // 清除对话历史缓存（强制刷新）
         String historyKey = "user:conversations:" + userId;
         redisTemplate.delete(historyKey);
 
-        // 构造消息
+        // 构造 RabbitMQ 消息
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());
         payload.put("conversationId", conversation.getId().toString());
         payload.put("message", message);
-
-        // 将消息发布到 RabbitMQ 队列
         String jsonPayload = new ObjectMapper().writeValueAsString(payload);
         rabbitTemplate.convertAndSend(RabbitMQConfig.CHAT_EXCHANGE, "chat.payload", jsonPayload);
 
-        // 返回一个用于查询的ID或其他信息
+        // 响应返回
         Map<String, Object> response = new HashMap<>();
-        response.put("conversationId", conversation.getId().toString()); // 确保 conversationId 为字符串
+        response.put("conversationId", conversation.getId().toString());
         response.put("message", "消息已发送，正在处理中");
         return Mono.just(response);
     }
+
 
     @GetMapping("/chat/{conversationId}")
     public Mono<Map<String, Object>> getChatResponse(@PathVariable String conversationId) {
@@ -121,6 +142,7 @@ public class ChatController {
 
     @PostMapping("/endConversation")
     public Mono<String> endConversation(ServletRequest request) {
+
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         User user = (User) httpRequest.getSession().getAttribute("user");
         Long userId = user != null ? user.getId() : null;
