@@ -15,6 +15,19 @@
             height: 100vh;
             overflow: hidden;
         }
+        .logout-container {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+        }
+        .logout-button {
+            padding: 8px 15px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
         .container {
             display: flex;
             flex: 1;
@@ -117,6 +130,11 @@
     </style>
 </head>
 <body>
+<!-- 注销按钮 -->
+<div class="logout-container">
+    <button class="logout-button" onclick="logout()">注销</button>
+</div>
+
 <div class="container">
     <div class="queue" id="message-queue"></div>
     <div class="chat-box" id="chat-box"></div>
@@ -126,6 +144,7 @@
     <button onclick="sendMessage()">Send</button>
     <button onclick="endConversation()">End Conversation</button>
 </div>
+
 
 <script>
     // Function to get the stored JWT token
@@ -327,6 +346,27 @@
             console.error('User ID not found');
         }
     })();
+
+    async function logout() {
+        try {
+            const response = await fetch('/api/logout', {
+                method: 'GET',
+                credentials: 'include' // 如果你用到了 Cookie，可以保留
+            });
+
+            if (!response.ok) {
+                throw new Error('注销失败');
+            }
+
+            localStorage.removeItem('jwtToken'); // 删除 JWT
+            alert("注销成功！");
+            window.location.href = '/login.html'; // 或者跳转回登录页
+        } catch (error) {
+            console.error('注销请求失败:', error);
+            alert("注销失败，请稍后再试！");
+        }
+    }
+
 </script>
 </body>
 </html>

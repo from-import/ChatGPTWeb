@@ -131,6 +131,14 @@ public class ChatMessageConsumer {
 
                                 log.info("格式化后的响应：{}", formatted);
 
+                                // ✅ 6.5：加入 Redis 去重逻辑
+                                String dedupKey = "chatmsg:d:" + userId + ":" + conversationId + ":" + formatted.hashCode();
+                                Boolean inserted = redisTemplate.opsForValue().setIfAbsent(dedupKey, "1", 5, TimeUnit.MINUTES);
+                                if (Boolean.FALSE.equals(inserted)) {
+                                    log.warn("重复响应忽略：{}", formatted);
+                                    return; // 跳过保存
+                                }
+
                                 // 7. 保存到数据库
                                 chatMessageService.saveChatMessage(
                                         Long.parseLong(userId),
