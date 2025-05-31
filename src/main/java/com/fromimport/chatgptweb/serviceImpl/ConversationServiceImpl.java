@@ -111,6 +111,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         try {
             String conversationsJsonNew = objectMapper.writeValueAsString(conversationHistory);
             redisTemplate.opsForValue().set("user:conversations:" + userId, conversationsJsonNew);
+            redisTemplate.expire("user:conversations:" + userId, 10, TimeUnit.MINUTES);
 
             log.info("用户ID {} 的对话历史已加载到 Redis", userId);
         } catch (JsonProcessingException e) {

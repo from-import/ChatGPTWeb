@@ -7,5 +7,5 @@ import reactor.core.publisher.Mono;
 import java.util.concurrent.CompletableFuture;
 
 public interface ChatMessageService extends IService<ChatMessage> {
-    Mono<Void> saveChatMessage(Long userId, Long conversationId, String message, String sender);
+    void saveChatMessage(Long userId, Long conversationId, String message, String sender);
 }

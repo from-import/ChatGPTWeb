@@ -105,8 +105,9 @@ public class ChatMessageConsumer {
                     }
 
                     if (!triples.isEmpty()) {
-                        keywordPrompt = "以下是提问相关的医学知识：\n" +
-                                String.join("；", triples) + "\n\n";
+                        keywordPrompt = "以下是提问相关的医学知识：\n"
+                                + String.join("；", triples) + "\n\n";
+                        log.info("模型抽取出的医学关键词如下: {}", keywordPrompt);
                     }
                 } catch (Exception ex) {
                     log.warn("关键词抽取失败，继续使用原始问题提问：{}", ex.getMessage());
@@ -115,57 +116,54 @@ public class ChatMessageConsumer {
                 // 3. 拼接 Prompt
                 String fullPrompt = keywordPrompt + message;
 
-                // 4. 调用 AnythingLLM 接口
-                openAIService.workspaceChat("123", fullPrompt, "query")
-                        .subscribe(rawJson -> {
-                            try {
-                                // 5. 从 JSON 中提取 textResponse
-                                JsonNode root = objectMapper.readTree(rawJson);
-                                String text = root.path("textResponse").asText("");
+                // 4. 调用 AnythingLLM 接口，并同步等待结果
+                //    假设 openAIService.workspaceChat 返回的是 Mono<String>
+                String rawJson = openAIService
+                        .workspaceChat("123", fullPrompt, "query")
+                        .block();  // 阻塞直到拿到 GPT 的 JSON 响应
 
-                                // 6. 格式化响应内容
-                                String formatted = text.lines()
-                                        .map(String::trim)
-                                        .filter(line -> !line.isEmpty())
-                                        .collect(Collectors.joining("\n\n"));
+                if (rawJson == null) {
+                    log.error("OpenAI 返回 null，没有生成任何回复");
+                    return;
+                }
 
-                                log.info("格式化后的响应：{}", formatted);
+                // 5. 从 JSON 中提取 textResponse
+                JsonNode root = objectMapper.readTree(rawJson);
+                String text = root.path("textResponse").asText("");
 
-                                // ✅ 6.5：加入 Redis 去重逻辑
-                                String dedupKey = "chatmsg:d:" + userId + ":" + conversationId + ":" + formatted.hashCode();
-                                Boolean inserted = redisTemplate.opsForValue().setIfAbsent(dedupKey, "1", 5, TimeUnit.MINUTES);
-                                if (Boolean.FALSE.equals(inserted)) {
-                                    log.warn("重复响应忽略：{}", formatted);
-                                    return; // 跳过保存
-                                }
+                // 6. 格式化响应内容
+                String formatted = text.lines()
+                        .map(String::trim)
+                        .filter(line -> !line.isEmpty())
+                        .collect(Collectors.joining("\n\n"));
 
-                                // 7. 保存到数据库
-                                chatMessageService.saveChatMessage(
-                                        Long.parseLong(userId),
-                                        Long.parseLong(conversationId),
-                                        formatted,
-                                        "chatgpt"
-                                );
+                log.info("格式化后的响应：{}", formatted);
 
-                                long endTime = System.currentTimeMillis();
-                                log.info("有线程池调度的运行时间: {} ms", (endTime - startTime));
 
-                                // 8. 存入 Redis
-                                redisTemplate.opsForValue()
-                                        .set("chat_response_" + conversationId, formatted);
-                                log.info("将响应存储到 Redis: {}", formatted);
+                // 8. 保存到数据库
+                chatMessageService.saveChatMessage(
+                        Long.parseLong(userId),
+                        Long.parseLong(conversationId),
+                        formatted,
+                        "CHATGPT"
+                );
 
-                                // 9. 推送到前端
-                                messagingTemplate.convertAndSend(
-                                        "/topic/chat/" + userId,
-                                        formatted
-                                );
-                                log.info("消息通过 WebSocket 推送给用户: {}", userId);
 
-                            } catch (Exception ex) {
-                                log.error("解析或处理响应失败: {}", ex.getMessage(), ex);
-                            }
-                        });
+
+                long endTime = System.currentTimeMillis();
+                log.info("有线程池调度的运行时间: {} ms", (endTime - startTime));
+
+                // 9. 存入 Redis（用于前端快速读取最后一条回复）
+                redisTemplate.opsForValue()
+                        .set("chat_response_" + conversationId, formatted);
+                log.info("将响应存储到 Redis，Key = chat_response_{}", conversationId);
+
+                // 10. 推送到前端 WebSocket
+                messagingTemplate.convertAndSend(
+                        "/topic/chat/" + userId,
+                        formatted
+                );
+                log.info("消息通过 WebSocket 推送给用户: {}", userId);
 
             } catch (Exception e) {
                 log.error("处理 RabbitMQ 消息失败: {}", e.getMessage(), e);
@@ -174,6 +172,7 @@ public class ChatMessageConsumer {
 
         log.info("提交任务到线程池处理消息: {}", payload);
         try {
+            // 阻塞等待消费任务完成，最长等待 30 秒
             future.get(30, TimeUnit.SECONDS);
             log.info("线程池任务成功完成: {}", payload);
         } catch (TimeoutException te) {

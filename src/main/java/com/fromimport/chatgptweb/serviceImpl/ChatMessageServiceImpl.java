@@ -55,45 +55,52 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         chatMessageMapper.insert(chatMessage);
     }
 
+    /**
+     * 同步版保存 ChatMessage，并在写库后清理相关缓存
+     */
     @Override
-    public Mono<Void> saveChatMessage(Long userId, Long conversationId, String message, String sender) {
+    public void saveChatMessage(Long userId, Long conversationId, String message, String sender) {
         String lockKey = "lock:user:conversations:" + userId;
         RLock lock = redissonClient.getLock(lockKey);
         boolean locked = false;
+
         try {
-            // 最多等待 5 秒去拿锁，拿到锁后 10 秒自动解锁
+            // 最多等待 5 秒去抢锁，抢到后 10 秒自动解锁
             locked = lock.tryLock(5, 10, TimeUnit.SECONDS);
             if (!locked) {
-                log.warn("无法获取分布式锁 {}，直接写库但不清理缓存", lockKey);
-                // 仍然写库，但跳过缓存删除
+                log.warn("【saveChatMessageSync】无法获取分布式锁={}, 退化为直接写库且不清除缓存", lockKey);
                 insertMessage(userId, conversationId, message, sender);
-                return Mono.empty();
+                return;
             }
-            // 加锁成功后，先写库
+
+            log.info("【saveChatMessageSync】加锁成功 => userId={}, conversationId={}, sender={}",
+                    userId, conversationId, sender);
+
+            // 写库
             insertMessage(userId, conversationId, message, sender);
 
-            // 写库后再删除各类相关缓存
+            // 写库后再删除缓存
             String historyKey = "user:conversations:" + userId;
             redisTemplate.delete(historyKey);
-            log.info("插入消息后清除用户对话历史缓存: {}", historyKey);
+            log.info("【saveChatMessageSync】清除用户对话历史缓存 => {}", historyKey);
 
             String responseKey = "chat_response:" + conversationId;
             redisTemplate.delete(responseKey);
-            log.info("插入消息后清除对话响应缓存: {}", responseKey);
+            log.info("【saveChatMessageSync】清除对话响应缓存 => {}", responseKey);
 
-            return Mono.empty();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("获取分布式锁 {} 过程中被中断", lockKey, e);
+            log.error("【saveChatMessageSync】获取分布式锁 {} 时被中断", lockKey, e);
             // 退化为无锁写库
             insertMessage(userId, conversationId, message, sender);
-            return Mono.empty();
+
         } catch (Exception e) {
-            log.error("保存消息并清理缓存时发生异常", e);
-            return Mono.empty();
+            log.error("【saveChatMessageSync】写库或清缓存时发生异常", e);
+
         } finally {
             if (locked && lock.isHeldByCurrentThread()) {
                 lock.unlock();
+                log.info("【saveChatMessageSync】释放锁 => {}", lockKey);
             }
         }
     }

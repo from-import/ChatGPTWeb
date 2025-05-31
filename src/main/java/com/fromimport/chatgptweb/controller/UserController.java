@@ -69,20 +69,18 @@ public class UserController {
 
     @PostMapping("/login")
     @LoadConversationsToRedis
-    public ResponseEntity<Map<String, String>> loginUser(HttpServletRequest request, @RequestBody User user) {
+    public ResponseEntity<Map<String, String>> loginUser(@RequestBody User user) {
         Map<String, String> responseMap = new HashMap<>();
         try {
             log.info("用户正在尝试登录：username={}", user.getUsername());
+
             boolean authenticatedUser = userService.authenticate(user.getUsername(), user.getPassword());
 
             if (authenticatedUser) {
                 User loggedInUser = userService.getUserByUsername(user.getUsername());
                 String token = JwtUtils.generateToken(loggedInUser.getUsername());
 
-                // 创建 Session 并存储用户信息
-                HttpSession session = request.getSession(true);
-                session.setAttribute("user", loggedInUser);
-
+                // 不再使用 Session，完全使用 JWT
                 responseMap.put("message", "登录成功");
                 responseMap.put("userId", loggedInUser.getId().toString());
                 responseMap.put("token", token);
@@ -100,11 +98,13 @@ public class UserController {
         }
     }
 
+
     @GetMapping("/logout")
-    public ResponseEntity<Map<String, String>> logoutUser(HttpSession session) {
-        session.invalidate(); // 使用户会话无效
+    public ResponseEntity<Map<String, String>> logoutUser() {
+        // JWT 是无状态的，服务端无法真正“使 token 失效”
+        // 通常做法是前端清除本地 token（如从 localStorage 或 cookie 中删除）
         Map<String, String> responseMap = new HashMap<>();
-        responseMap.put("message", "用户已登出");
+        responseMap.put("message", "JWT 模式下无需服务端登出，请前端删除本地 token");
         return ResponseEntity.ok(responseMap);
     }
 }

@@ -142,14 +142,31 @@ public class ChatController {
 
     @PostMapping("/endConversation")
     public Mono<String> endConversation(ServletRequest request) {
-
         HttpServletRequest httpRequest = (HttpServletRequest) request;
-        User user = (User) httpRequest.getSession().getAttribute("user");
-        Long userId = user != null ? user.getId() : null;
-        if (userId == null) {
-            return Mono.error(new RuntimeException("用户未登录或会话过期"));
+
+        // 1. 解析 JWT Token
+        String token = httpRequest.getHeader("Authorization");
+        if (token == null || !token.startsWith("Bearer ")) {
+            return Mono.error(new RuntimeException("缺少或非法的 Authorization 令牌"));
+        }
+        token = token.substring(7).trim(); // 去掉 "Bearer "
+
+        // 2. 提取用户名
+        String username;
+        try {
+            username = JwtUtils.getUsernameFromToken(token);
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("非法令牌或已过期"));
         }
 
+        // 3. 获取用户 ID
+        User user = userService.getUserByUsername(username);
+        if (user == null) {
+            return Mono.error(new RuntimeException("用户不存在"));
+        }
+        Long userId = user.getId();
+
+        // 4. 分布式锁处理对话结束逻辑
         RLock lock = redissonClient.getLock("lock:conversation:end:" + userId);
         lock.lock();
         try {
